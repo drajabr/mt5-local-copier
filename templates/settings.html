@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MT5 Copier Settings</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <main class="page">
+    <header class="topbar">
+      <h1>Settings</h1>
+      <div class="actions">
+        <a class="btn ghost" href="/">Dashboard</a>
+      </div>
+    </header>
+
+    <section class="panel">
+      <h2>Authentication</h2>
+      <div class="row">
+        <input id="token" placeholder="Enter admin token" type="password" />
+        <button class="btn" onclick="saveToken()">Save Token</button>
+      </div>
+      <p class="muted">Token is stored in your browser local storage.</p>
+    </section>
+
+    <section class="panel columns">
+      <div>
+        <h2>Sources</h2>
+        <div id="channels"></div>
+        <div class="row">
+          <input id="newChannel" placeholder="New channel name" />
+          <button class="btn" onclick="addChannel()">Add Channel</button>
+        </div>
+      </div>
+
+      <div>
+        <h2>Destinations</h2>
+        <div id="destinations"></div>
+      </div>
+    </section>
+
+    <section class="footer-actions">
+      <button class="btn" onclick="previewApply()">Save and Apply</button>
+      <button class="btn ghost" onclick="cancelChanges()">Cancel</button>
+    </section>
+  </main>
+
+  <dialog id="previewDialog">
+    <h3>Apply Preview</h3>
+    <pre id="previewText"></pre>
+    <div class="row">
+      <button class="btn" onclick="confirmApply()">Confirm and Reload</button>
+      <button class="btn ghost" onclick="closePreview()">Close</button>
+    </div>
+  </dialog>
+
+  <script>
+    let config = null;
+
+    function getToken() {
+      return localStorage.getItem('mt5-admin-token') || '';
+    }
+
+    function saveToken() {
+      const token = document.getElementById('token').value.trim();
+      localStorage.setItem('mt5-admin-token', token);
+      alert('Token saved');
+      loadConfig();
+    }
+
+    function authHeaders() {
+      return {
+        'Content-Type': 'application/json',
+        'X-Admin-Token': getToken(),
+      };
+    }
+
+    async function loadConfig() {
+      const tokenNode = document.getElementById('token');
+      tokenNode.value = getToken();
+
+      const response = await fetch('/api/config', { headers: authHeaders() });
+      if (!response.ok) {
+        alert('Unauthorized. Enter a valid token.');
+        return;
+      }
+
+      config = await response.json();
+      renderChannels();
+      renderDestinations();
+    }
+
+    function renderChannels() {
+      const channelsRoot = document.getElementById('channels');
+      channelsRoot.innerHTML = '';
+
+      config.channels.forEach((channel) => {
+        const block = document.createElement('details');
+        block.className = 'channel';
+        block.open = true;
+
+        const srcInChannel = config.sources.filter((src) => src.channel === channel.name);
+        block.innerHTML = `
+          <summary>${channel.name} <span class="badge">${srcInChannel.length} sources</span></summary>
+          <div class="channel-body" id="channel-${channel.name}"></div>
+          <div class="row">
+            <input id="src-${channel.name}" placeholder="New source name" />
+            <button class="btn" onclick="addSource('${channel.name}')">Add Source</button>
+          </div>
+        `;
+
+        channelsRoot.appendChild(block);
+        const channelBody = block.querySelector(`#channel-${channel.name}`);
+        channelBody.innerHTML = `<ul>${srcInChannel.map((src) => `<li>${src.name} (${src.id})</li>`).join('')}</ul>`;
+      });
+    }
+
+    function renderDestinations() {
+      const root = document.getElementById('destinations');
+      root.innerHTML = `<ul>${config.destinations.map((d) => `<li>${d.name} (${d.id})<br/>Channels: ${d.settings.channel_subscriptions.join(', ') || '-'}</li>`).join('')}</ul>`;
+
+      const form = document.createElement('div');
+      form.className = 'row stack';
+      form.innerHTML = `
+        <input id="newDestName" placeholder="New destination name" />
+        <label>Select channels for destination</label>
+        <select id="destChannels" multiple size="6">
+          ${config.channels.map((c) => `<option value="${c.name}">${c.name}</option>`).join('')}
+        </select>
+        <button class="btn" onclick="addDestination()">Add Destination</button>
+      `;
+      root.appendChild(form);
+    }
+
+    async function addChannel() {
+      const name = document.getElementById('newChannel').value.trim();
+      if (!name) return;
+
+      const response = await fetch('/api/channels', {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ name })
+      });
+
+      if (!response.ok) {
+        alert('Failed to add channel');
+        return;
+      }
+
+      await loadConfig();
+      document.getElementById('newChannel').value = '';
+    }
+
+    async function addSource(channelName) {
+      const input = document.getElementById(`src-${channelName}`);
+      const name = input.value.trim();
+      if (!name) return;
+
+      const response = await fetch('/api/sources', {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ name, channel: channelName })
+      });
+
+      if (!response.ok) {
+        alert('Failed to add source');
+        return;
+      }
+
+      input.value = '';
+      await loadConfig();
+    }
+
+    async function addDestination() {
+      const name = document.getElementById('newDestName').value.trim();
+      const select = document.getElementById('destChannels');
+      const channels = Array.from(select.selectedOptions).map((opt) => opt.value);
+
+      if (!name) return;
+
+      const response = await fetch('/api/destinations', {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ name, channel_subscriptions: channels })
+      });
+
+      if (!response.ok) {
+        alert('Failed to add destination');
+        return;
+      }
+
+      document.getElementById('newDestName').value = '';
+      await loadConfig();
+    }
+
+    async function previewApply() {
+      if (!config) return;
+
+      const response = await fetch('/api/config/preview', {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ config })
+      });
+
+      const preview = await response.json();
+      const text = JSON.stringify(preview, null, 2);
+      document.getElementById('previewText').textContent = text;
+      document.getElementById('previewDialog').showModal();
+    }
+
+    async function confirmApply() {
+      const response = await fetch('/api/config/apply', {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ config })
+      });
+
+      if (!response.ok) {
+        alert('Apply failed');
+        return;
+      }
+
+      alert('Applied successfully');
+      closePreview();
+      loadConfig();
+    }
+
+    function closePreview() {
+      document.getElementById('previewDialog').close();
+    }
+
+    function cancelChanges() {
+      loadConfig();
+    }
+
+    loadConfig();
+  </script>
+</body>
+</html>

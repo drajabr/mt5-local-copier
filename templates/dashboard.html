@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MT5 Copier Dashboard</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <main class="page">
+    <header class="topbar">
+      <h1>MT5 Local Copier</h1>
+      <div class="actions">
+        <a class="btn" href="/settings">Login / Control / Settings</a>
+      </div>
+    </header>
+
+    <section class="panel">
+      <h2>Runtime</h2>
+      <div id="runtime"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Channels</h2>
+      <div id="channels"></div>
+    </section>
+  </main>
+
+  <script>
+    async function loadDashboard() {
+      const response = await fetch('/api/dashboard');
+      const data = await response.json();
+
+      const runtime = document.getElementById('runtime');
+      runtime.innerHTML = `
+        <div class="stats-grid">
+          <div class="stat"><span>Workers</span><strong>${data.runtime.active_workers || 0}</strong></div>
+          <div class="stat"><span>Last Applied</span><strong>${data.runtime.last_applied_at || 'Never'}</strong></div>
+        </div>
+      `;
+
+      const channelsNode = document.getElementById('channels');
+      const channelNames = Object.keys(data.channels);
+
+      if (!channelNames.length) {
+        channelsNode.innerHTML = '<p class="muted">No channels configured yet.</p>';
+        return;
+      }
+
+      channelsNode.innerHTML = channelNames.map((name) => {
+        const channel = data.channels[name];
+        const sourceCount = channel.sources.length;
+        const destinationCount = channel.destinations.length;
+        return `
+          <details class="channel" open>
+            <summary>${name} <span class="badge">${sourceCount} sources / ${destinationCount} destinations</span></summary>
+            <div class="channel-body">
+              <h4>Sources</h4>
+              <ul>${channel.sources.map((s) => `<li>${s.name} (${s.id})</li>`).join('')}</ul>
+              <h4>Destinations</h4>
+              <ul>${channel.destinations.map((d) => `<li>${d.name} (${d.id})</li>`).join('')}</ul>
+            </div>
+          </details>
+        `;
+      }).join('');
+    }
+
+    loadDashboard();
+    setInterval(loadDashboard, 10000);
+  </script>
+</body>
+</html>
