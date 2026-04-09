@@ -3,6 +3,8 @@ FROM debian:bookworm-slim
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
+    VIRTUAL_ENV=/opt/venv \
+    PATH="/opt/venv/bin:$PATH" \
     WINEPREFIX=/data/wineprefix \
     DISPLAY=:99
 
@@ -25,7 +27,9 @@ RUN dpkg --add-architecture i386 && \
 WORKDIR /app
 
 COPY requirements.txt /app/requirements.txt
-RUN pip3 install --no-cache-dir -r /app/requirements.txt
+RUN python3 -m venv "$VIRTUAL_ENV" && \
+    pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r /app/requirements.txt
 
 COPY app /app/app
 COPY templates /app/templates
