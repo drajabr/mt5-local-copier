@@ -39,14 +39,15 @@ docker compose up --build -d
 
 3. Open:
 
-- Dashboard: http://localhost:8080/
-- Settings: http://localhost:8080/settings
+- Dashboard: http://localhost:8000/
+- Settings: http://localhost:8000/settings
 
 4. Enter your configured admin token in Settings page and save it in browser.
 
 ## Environment variables
 
 - `ADMIN_TOKEN` (required in `docker-compose.yml`): settings token used by API/UI
+- `APP_PORT` (optional, default `8000`): maps host and container port together for the web UI/API
 - `CONFIG_PATH` (default `/data/config/config.json`)
 - `LOG_PATH` (default `/data/logs/copier.log`)
 - `MT5_ROOT` (default `/data/mt5`)
