@@ -34,7 +34,7 @@ cp .env.example .env
 2. Start service:
 
 ```bash
-docker compose up --build -d
+docker compose up -d
 ```
 
 3. Open:
@@ -42,7 +42,10 @@ docker compose up --build -d
 - Dashboard: http://localhost:8000/
 - Settings: http://localhost:8000/settings
 
-4. Enter your configured admin token in Settings page and save it in browser.
+4. Open Settings and sign in with HTTP Basic auth:
+
+- Username: `admin`
+- Password: your `ADMIN_TOKEN` (or generated first-run token)
 
 ## Environment variables
 
@@ -56,6 +59,7 @@ docker compose up --build -d
 
 ## Notes
 
+- Settings/API authentication uses HTTP Basic auth. Use username `admin` and token as password.
 - MT5 installation switches may differ by installer build. The script includes an MVP fallback marker so API/UI can still run even if silent install is not detected automatically.
 - Real trade execution integration and MT5 bridge logic are not fully implemented in this first MVP; worker lifecycle and config/apply scaffolding are implemented.
 

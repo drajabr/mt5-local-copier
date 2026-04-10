@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import os
+import secrets
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List
 from uuid import uuid4
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.responses import HTMLResponse
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
@@ -33,7 +35,13 @@ MT5_ROOT = Path(os.getenv("MT5_ROOT", "/data/mt5"))
 INSTALLER_SCRIPT = Path(os.getenv("INSTALLER_SCRIPT", "/app/scripts/install_mt5.sh"))
 
 store = ConfigStore(CONFIG_PATH)
+config_existed_before_start = CONFIG_PATH.exists()
 config = store.load_or_create(env_token=os.getenv("ADMIN_TOKEN"))
+if not os.getenv("ADMIN_TOKEN") and config_existed_before_start:
+    print(
+        "[mt5-local-copier] ADMIN_TOKEN not set; using persisted token from "
+        f"{CONFIG_PATH}. Token is generated and printed only when config is created first time."
+    )
 manager = Mt5Manager(MT5_ROOT, INSTALLER_SCRIPT, LOG_PATH)
 engine = CopierEngine()
 
@@ -47,6 +55,7 @@ except Exception as exc:
 app = FastAPI(title="MT5 Local Copier MVP")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
+security = HTTPBasic()
 
 
 class ChannelCreate(BaseModel):
@@ -73,9 +82,16 @@ class ConfigApplyPayload(BaseModel):
     config: AppConfig
 
 
-def require_token(x_admin_token: str = Header(default="")) -> None:
-    if x_admin_token != config.admin_token:
-        raise HTTPException(status_code=401, detail="Invalid token")
+def require_admin_auth(credentials: HTTPBasicCredentials = Depends(security)) -> None:
+    expected_username = "admin"
+    username_ok = secrets.compare_digest(credentials.username, expected_username)
+    password_ok = secrets.compare_digest(credentials.password, config.admin_token)
+    if not (username_ok and password_ok):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid credentials",
+            headers={"WWW-Authenticate": 'Basic realm="MT5 Local Copier"'},
+        )
 
 
 def _source_symbols(source_id: str) -> List[str]:
@@ -127,7 +143,7 @@ def dashboard_page(request: Request):
 
 
 @app.get("/settings", response_class=HTMLResponse)
-def settings_page(request: Request):
+def settings_page(request: Request, _: None = Depends(require_admin_auth)):
     return templates.TemplateResponse("settings.html", {"request": request})
 
 
@@ -152,17 +168,17 @@ def dashboard_data() -> Dict[str, object]:
 
 
 @app.get("/api/config")
-def get_config(_: None = Depends(require_token)) -> Dict[str, object]:
+def get_config(_: None = Depends(require_admin_auth)) -> Dict[str, object]:
     return config.model_dump(mode="json")
 
 
 @app.get("/api/token-hint")
 def token_hint() -> Dict[str, str]:
-    return {"message": "Use X-Admin-Token header to access settings API."}
+    return {"message": "Use HTTP Basic auth with username 'admin' and your admin token as password."}
 
 
 @app.post("/api/channels")
-def add_channel(payload: ChannelCreate, _: None = Depends(require_token)) -> Dict[str, str]:
+def add_channel(payload: ChannelCreate, _: None = Depends(require_admin_auth)) -> Dict[str, str]:
     if any(channel.name == payload.name for channel in config.channels):
         raise HTTPException(status_code=409, detail="Channel already exists")
 
@@ -172,7 +188,7 @@ def add_channel(payload: ChannelCreate, _: None = Depends(require_token)) -> Dic
 
 
 @app.post("/api/sources")
-def add_source(payload: SourceCreate, _: None = Depends(require_token)) -> Dict[str, str]:
+def add_source(payload: SourceCreate, _: None = Depends(require_admin_auth)) -> Dict[str, str]:
     if not any(channel.name == payload.channel for channel in config.channels):
         raise HTTPException(status_code=404, detail="Channel does not exist")
 
@@ -195,7 +211,7 @@ def add_source(payload: SourceCreate, _: None = Depends(require_token)) -> Dict[
 
 
 @app.post("/api/destinations")
-def add_destination(payload: DestinationCreate, _: None = Depends(require_token)) -> Dict[str, str]:
+def add_destination(payload: DestinationCreate, _: None = Depends(require_admin_auth)) -> Dict[str, str]:
     destination_id = f"dst-{uuid4().hex[:8]}"
     destination = DestinationConfig(
         id=destination_id,
@@ -229,7 +245,7 @@ def add_destination(payload: DestinationCreate, _: None = Depends(require_token)
 
 
 @app.post("/api/config/preview")
-def preview_apply(payload: ConfigApplyPayload, _: None = Depends(require_token)) -> Dict[str, object]:
+def preview_apply(payload: ConfigApplyPayload, _: None = Depends(require_admin_auth)) -> Dict[str, object]:
     new_config = payload.config
 
     errors = []
@@ -259,7 +275,7 @@ def preview_apply(payload: ConfigApplyPayload, _: None = Depends(require_token))
 
 
 @app.post("/api/config/apply")
-def apply_config(payload: ConfigApplyPayload, _: None = Depends(require_token)) -> Dict[str, object]:
+def apply_config(payload: ConfigApplyPayload, _: None = Depends(require_admin_auth)) -> Dict[str, object]:
     global config
     config = payload.config
 

@@ -15,15 +15,6 @@
       </div>
     </header>
 
-    <section class="panel">
-      <h2>Authentication</h2>
-      <div class="row">
-        <input id="token" placeholder="Enter admin token" type="password" />
-        <button class="btn" onclick="saveToken()">Save Token</button>
-      </div>
-      <p class="muted">Token is stored in your browser local storage.</p>
-    </section>
-
     <section class="panel columns">
       <div>
         <h2>Sources</h2>
@@ -58,31 +49,10 @@
   <script>
     let config = null;
 
-    function getToken() {
-      return localStorage.getItem('mt5-admin-token') || '';
-    }
-
-    function saveToken() {
-      const token = document.getElementById('token').value.trim();
-      localStorage.setItem('mt5-admin-token', token);
-      alert('Token saved');
-      loadConfig();
-    }
-
-    function authHeaders() {
-      return {
-        'Content-Type': 'application/json',
-        'X-Admin-Token': getToken(),
-      };
-    }
-
     async function loadConfig() {
-      const tokenNode = document.getElementById('token');
-      tokenNode.value = getToken();
-
-      const response = await fetch('/api/config', { headers: authHeaders() });
+      const response = await fetch('/api/config');
       if (!response.ok) {
-        alert('Unauthorized. Enter a valid token.');
+        alert('Unauthorized. Sign in via browser basic auth: username admin, password = admin token.');
         return;
       }
 
@@ -139,7 +109,9 @@
 
       const response = await fetch('/api/channels', {
         method: 'POST',
-        headers: authHeaders(),
+        headers: {
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify({ name })
       });
 
@@ -159,7 +131,9 @@
 
       const response = await fetch('/api/sources', {
         method: 'POST',
-        headers: authHeaders(),
+        headers: {
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify({ name, channel: channelName })
       });
 
@@ -181,7 +155,9 @@
 
       const response = await fetch('/api/destinations', {
         method: 'POST',
-        headers: authHeaders(),
+        headers: {
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify({ name, channel_subscriptions: channels })
       });
 
@@ -199,7 +175,9 @@
 
       const response = await fetch('/api/config/preview', {
         method: 'POST',
-        headers: authHeaders(),
+        headers: {
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify({ config })
       });
 
@@ -212,7 +190,9 @@
     async function confirmApply() {
       const response = await fetch('/api/config/apply', {
         method: 'POST',
-        headers: authHeaders(),
+        headers: {
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify({ config })
       });
 
